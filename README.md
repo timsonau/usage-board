@@ -1,44 +1,51 @@
-# Claude Usage Widget
+# 🐱 Claude Usage Widget
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A small always-on-top Windows widget for people using Claude Code. Nibble, a pixel-art cat, sits on your desktop and shows how much of your current 5-hour and 7-day usage windows you have left — no terminal, no dashboard, just a glance.
+Meet **Nibble** — a tiny pixel-art cat who lives on your desktop and keeps an eye on your Claude Code usage so you don't have to. No terminal commands, no dashboard tab, no guessing when your limit resets. Just glance at Nibble.
 
-## What you get
+![Nibble in action](docs/demo.gif)
 
-- Live **5h** and **7d** usage bars, each colored independently off its own percentage
-- A reset countdown next to each bar
-- Nibble's mood (and the bars' color) shifts through four tiers — calm, busy, anxious, critical — as you approach your limits
-- A Windows toast when you cross 85% or 100% of either window
-- Always-on-top, draggable, no taskbar clutter
+## Why you'll like it
 
-## Requirements
+- 📊 **Two live bars** — your 5-hour and 7-day usage windows, each with its own color and reset countdown
+- 😼 **Nibble reacts** — calm, busy, anxious, or critical, Nibble's mood (and the bars) shift as you get closer to your limit
+- 🔔 **A heads-up when it matters** — a Windows toast at 85% and 100%, so you're never caught off guard mid-session
+- 📌 **Stays out of your way** — always-on-top, draggable, no taskbar icon
+
+## Getting started
+
+You'll need:
 
 - Windows 10 or 11
-- Claude Code (CLI) installed and signed in (`claude login`)
+- [Claude Code](https://claude.com/claude-code) installed and signed in (`claude login`)
 
-## Install
+Then:
 
-Prebuilt installers are published on the [Releases](../../releases) page — download the latest `.exe` and run it. No admin rights needed.
+1. Grab the latest installer from [Releases](../../releases)
+2. Run it — no admin rights required
+3. Drag Nibble wherever you like and get back to work
 
 ## How it works
 
-The widget reads the OAuth token Claude Code already stores locally at `~/.claude/.credentials.json` and polls the same endpoint Claude Code's own UI uses to show your usage — the app never asks you to log in separately, and it never sees or stores your credentials anywhere but that existing file.
+Nibble reads the same OAuth token Claude Code already keeps at `~/.claude/.credentials.json` and checks the same usage endpoint Claude Code's own UI uses. There's no separate login and no extra account — it just quietly watches the session you already have.
 
-## Privacy
+## Privacy, plainly
 
-- Reads: `~/.claude/.credentials.json` (read-only)
-- Sends: requests to `api.anthropic.com` to read your usage, using your existing Claude Code session — nothing else
-- Stores locally: window position, and a startup-launch preference, under `%APPDATA%\usage-board\`
-- No analytics, no telemetry, no separate backend
+- **Reads** `~/.claude/.credentials.json` — read-only, never modified
+- **Talks to** `api.anthropic.com` only, to fetch your usage
+- **Saves locally** your window position and a startup preference, under `%APPDATA%\usage-board\`
+- **No analytics, no telemetry, no backend of ours** — it's just you, Nibble, and Anthropic's API
 
-## Development
+## Contributing / running from source
 
 ```powershell
 npm install
 npm run tauri dev
 ```
+
+See [CONTEXT.md](CONTEXT.md) for the project's vocabulary and [CLAUDE.md](CLAUDE.md) for the contribution workflow.
 
 ## License
 

@@ -20,6 +20,12 @@ Tag `main` as `vX.Y.Z` (pre-1.0: `vX.Y.Z-alpha`/`-beta` while still unstable) an
 - `cargo build --no-default-features` and `cargo test --no-default-features` from `src-tauri/`
 - `npx tsc --noEmit` from the repo root
 
-## Working alongside other sessions
+## Agent skills
 
-The user sometimes runs more than one Claude Code session on this repo at once (e.g. across devices via Remote Control). If files change on disk mid-task that you didn't touch, that's a peer session, not corruption — use `ListAgents` to find it, coordinate before pushing or tagging, and independently re-run Verification rather than trusting a peer's report unchecked.
+### Issue tracker
+
+Issues and specs live as GitHub issues (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout — `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
