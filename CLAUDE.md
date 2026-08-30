@@ -11,9 +11,16 @@ Agent-facing workflow notes for this repo. For domain vocabulary (Nibble, Usage 
 
 ## Cutting a release
 
-Tag `main` as `vX.Y.Z` (pre-1.0: `vX.Y.Z-alpha`/`-beta` while still unstable) and push the tag — that alone triggers `.github/workflows/release.yml`, which builds the NSIS installer and attaches it to a **draft** GitHub Release. Nothing goes public until that draft is manually published.
+When the user says "tag", "cut a release", or "bump the version" — with no version number given — pick it via semver from what shipped since the last tag: patch for fixes, minor for new features. Stay on a `0.x.y-alpha` line (keep the `-alpha` suffix) until the user says the project is ready to drop it for a real `1.0.0`.
 
-**Version lives in three files that don't sync automatically**: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`. Bump all three to match the tag before tagging, or the installer's internal version won't match its release name.
+1. `git pull origin main` — always tag from the tip of `main`.
+2. Find the last tag: `git describe --tags --abbrev=0` (if none exist yet, this is `0.1.0-alpha`).
+3. Decide the next version by semver from that tag, per the rule above.
+4. Update the version string in all three files to match it — **they don't sync automatically**: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`.
+5. Commit directly to `main` (a version bump is exactly the "too small to ticket" case above): `chore: bump version to vX.Y.Z`.
+6. `git tag vX.Y.Z`, then `git push origin main && git push origin vX.Y.Z`.
+
+The tag push alone triggers `.github/workflows/release.yml`, which builds the NSIS installer and attaches it to a **draft** GitHub Release — nothing goes public until that draft is manually published on GitHub.
 
 ## Verification before merging or tagging
 
