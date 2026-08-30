@@ -268,7 +268,7 @@ async fn attempt_fetch() -> FetchAttempt {
     };
 
     if is_expired(creds.expires_at_raw) {
-        eprintln!("[claude] access token expired");
+        eprintln!("[claude] {}", ClaudeError::TokenExpired);
         return FetchAttempt::Unavailable;
     }
 
