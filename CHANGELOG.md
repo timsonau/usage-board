@@ -5,6 +5,12 @@ All notable changes to this project are documented here. Format follows
 versions per [Semantic Versioning](https://semver.org/), staying on a
 `0.x.y-alpha` line until it's ready for a real `1.0.0`.
 
+## [0.2.1-alpha] - 2026-08-30
+
+### Changed
+
+- Replaced the default Tauri logo with a pixel-art cat icon (sourced from the portfolio site's favicon) for the window/taskbar icon.
+
 ## [0.2.0-alpha] - 2026-08-30
 
 ### Added
