@@ -248,9 +248,9 @@ fn now_iso() -> String {
 /// they happen (`attempt_fetch`, an I/O boundary), not here.
 enum FetchAttempt {
     /// No usable credentials: missing, unreadable, or expired.
-    Unavailable(ClaudeError),
+    Unavailable,
     /// Credentials were fine but the request itself failed.
-    Failed(ClaudeError),
+    Failed,
     Succeeded(UsageResponse),
 }
 
@@ -262,21 +262,21 @@ async fn attempt_fetch() -> FetchAttempt {
     let creds = match read_credentials() {
         Err(err) => {
             eprintln!("[claude] could not read credentials: {err}");
-            return FetchAttempt::Unavailable(err);
+            return FetchAttempt::Unavailable;
         }
         Ok(creds) => creds,
     };
 
     if is_expired(creds.expires_at_raw) {
         eprintln!("[claude] access token expired");
-        return FetchAttempt::Unavailable(ClaudeError::TokenExpired);
+        return FetchAttempt::Unavailable;
     }
 
     match fetch_usage(&creds.access_token).await {
         Ok(usage) => FetchAttempt::Succeeded(usage),
         Err(err) => {
             eprintln!("[claude] usage fetch failed, keeping last known state: {err}");
-            FetchAttempt::Failed(err)
+            FetchAttempt::Failed
         }
     }
 }
@@ -288,8 +288,8 @@ async fn attempt_fetch() -> FetchAttempt {
 /// network, filesystem, or `AppHandle` involved.
 fn resolve_state(attempt: FetchAttempt, last_ok_state: &Option<UiState>) -> UiState {
     match attempt {
-        FetchAttempt::Unavailable(_) => UiState::waiting(),
-        FetchAttempt::Failed(_) => last_ok_state.clone().unwrap_or_else(UiState::waiting),
+        FetchAttempt::Unavailable => UiState::waiting(),
+        FetchAttempt::Failed => last_ok_state.clone().unwrap_or_else(UiState::waiting),
         FetchAttempt::Succeeded(usage) => UiState::from_usage(&usage),
     }
 }
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn no_credentials_reports_waiting() {
-        let state = resolve_state(FetchAttempt::Unavailable(ClaudeError::TokenExpired), &None);
+        let state = resolve_state(FetchAttempt::Unavailable, &None);
         assert!(matches!(state.status, UiStatus::Waiting));
     }
 
@@ -342,7 +342,7 @@ mod tests {
             seven_day: Some(window(10.0)),
         });
 
-        let state = resolve_state(FetchAttempt::Failed(ClaudeError::TokenExpired), &Some(last.clone()));
+        let state = resolve_state(FetchAttempt::Failed, &Some(last.clone()));
 
         assert!(matches!(state.status, UiStatus::Ok));
         assert_eq!(state.session_pct, last.session_pct);
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn failed_fetch_without_last_known_state_reports_waiting() {
-        let state = resolve_state(FetchAttempt::Failed(ClaudeError::TokenExpired), &None);
+        let state = resolve_state(FetchAttempt::Failed, &None);
         assert!(matches!(state.status, UiStatus::Waiting));
     }
 

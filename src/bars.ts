@@ -14,15 +14,14 @@ const MOOD_COLOR: Record<Mood, string> = {
   critical: "#ff5c5c",
 };
 
-// Each bar colors itself off its own percentage, independent of the other
-// window and independent of the character's overall (max-driven) mood — a
-// calm 7d window stays green even while a hot 5h window turns the mascot
-// anxious.
-function moodForPct(pct: number): Mood {
-  if (pct >= 100) return "critical";
-  if (pct >= 85) return "anxious";
-  if (pct >= 50) return "busy";
-  return "calm";
+// A bar's color follows its own window's mood tier, independent of the
+// other window and independent of the character's overall (max-driven)
+// mood — a calm 7d window stays green even while a hot 5h window turns the
+// mascot anxious. The tier itself is decided once, in Rust's mood_for_pct,
+// and travels here on the payload so this module only renders it.
+export interface BarData {
+  pct: number;
+  mood: Mood;
 }
 
 export function initBar(canvas: HTMLCanvasElement, cssWidth: number, cssHeight: number) {
@@ -34,13 +33,13 @@ export function initBar(canvas: HTMLCanvasElement, cssWidth: number, cssHeight: 
   if (ctx) ctx.imageSmoothingEnabled = false;
 }
 
-export function drawBar(canvas: HTMLCanvasElement, pct: number | null) {
+export function drawBar(canvas: HTMLCanvasElement, data: BarData | null) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
 
-  const color = pct === null ? MOOD_COLOR.waiting : MOOD_COLOR[moodForPct(pct)];
-  const clamped = Math.max(0, Math.min(100, pct ?? 0));
+  const color = MOOD_COLOR[data?.mood ?? "waiting"];
+  const clamped = Math.max(0, Math.min(100, data?.pct ?? 0));
   const filled = Math.round((clamped / 100) * SEGMENTS);
 
   for (let i = 0; i < SEGMENTS; i++) {
