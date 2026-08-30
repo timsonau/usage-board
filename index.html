@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@600&display=swap" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Usage Widget</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="widget" data-tauri-drag-region>
+      <canvas id="sprite"></canvas>
+      <div id="stats">
+        <div class="stat-row">
+          <span class="stat-label">5h</span>
+          <canvas id="bar-5h" class="bar"></canvas>
+          <span class="stat-pct" id="pct-5h">--</span>
+          <span class="stat-reset" id="reset-5h">--</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">7d</span>
+          <canvas id="bar-7d" class="bar"></canvas>
+          <span class="stat-pct" id="pct-7d">--</span>
+          <span class="stat-reset" id="reset-7d">--</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
