@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 pub const POLL_INTERVAL_SECS: u64 = 90;
+/// Ceiling for the rate-limit backoff below, however it's derived (a large
+/// `Retry-After` from the server, or repeated consecutive 429s).
+const MAX_BACKOFF_SECS: u64 = 15 * 60;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA_HEADER: &str = "oauth-2025-04-20";
@@ -33,6 +36,12 @@ pub enum ClaudeError {
     Request(#[source] reqwest::Error),
     #[error("usage response had unexpected status {0}")]
     UnexpectedStatus(reqwest::StatusCode),
+    #[error("usage request rate limited (429)")]
+    RateLimited {
+        /// From the response's `Retry-After` header, when the server sends
+        /// one as a delay in seconds (the HTTP-date form isn't handled).
+        retry_after_secs: Option<u64>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,6 +147,14 @@ pub async fn fetch_usage(access_token: &str) -> Result<UsageResponse, ClaudeErro
         .map_err(ClaudeError::Request)?;
 
     let status = response.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let retry_after_secs = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        return Err(ClaudeError::RateLimited { retry_after_secs });
+    }
     if !status.is_success() {
         return Err(ClaudeError::UnexpectedStatus(status));
     }
@@ -251,6 +268,10 @@ enum FetchAttempt {
     Unavailable,
     /// Credentials were fine but the request itself failed.
     Failed,
+    /// The server responded 429; carries `Retry-After` (in seconds) when it
+    /// sent one, so the poll loop can back off instead of retrying at the
+    /// normal cadence and tripping the same limit again.
+    RateLimited(Option<u64>),
     Succeeded(UsageResponse),
 }
 
@@ -274,6 +295,12 @@ async fn attempt_fetch() -> FetchAttempt {
 
     match fetch_usage(&creds.access_token).await {
         Ok(usage) => FetchAttempt::Succeeded(usage),
+        Err(ClaudeError::RateLimited { retry_after_secs }) => {
+            eprintln!(
+                "[claude] usage fetch rate limited (429), backing off (retry_after_secs={retry_after_secs:?})"
+            );
+            FetchAttempt::RateLimited(retry_after_secs)
+        }
         Err(err) => {
             eprintln!("[claude] usage fetch failed, keeping last known state: {err}");
             FetchAttempt::Failed
@@ -289,8 +316,31 @@ async fn attempt_fetch() -> FetchAttempt {
 fn resolve_state(attempt: FetchAttempt, last_ok_state: &Option<UiState>) -> UiState {
     match attempt {
         FetchAttempt::Unavailable => UiState::waiting(),
-        FetchAttempt::Failed => last_ok_state.clone().unwrap_or_else(UiState::waiting),
+        FetchAttempt::Failed | FetchAttempt::RateLimited(_) => {
+            last_ok_state.clone().unwrap_or_else(UiState::waiting)
+        }
         FetchAttempt::Succeeded(usage) => UiState::from_usage(&usage),
+    }
+}
+
+/// How long to sleep before the next poll after this attempt. Rate limits
+/// back off instead of retrying at `POLL_INTERVAL_SECS`, which would just
+/// trip the same limit again; everything else uses the normal cadence.
+/// `consecutive_rate_limits` is the count *including* this attempt (i.e. the
+/// caller increments before calling), so the first 429 already backs off
+/// past the normal interval rather than repeating it once for free.
+fn next_poll_delay_secs(attempt: &FetchAttempt, consecutive_rate_limits: u32) -> u64 {
+    match attempt {
+        FetchAttempt::RateLimited(retry_after_secs) => match retry_after_secs {
+            Some(secs) => (*secs).min(MAX_BACKOFF_SECS),
+            None => {
+                let exponent = consecutive_rate_limits.saturating_sub(1).min(6);
+                POLL_INTERVAL_SECS
+                    .saturating_mul(1u64 << exponent)
+                    .min(MAX_BACKOFF_SECS)
+            }
+        },
+        _ => POLL_INTERVAL_SECS,
     }
 }
 
@@ -302,9 +352,17 @@ pub async fn run_poll_loop(app_handle: tauri::AppHandle) {
     use tauri::Emitter;
 
     let mut last_ok_state: Option<UiState> = None;
+    let mut consecutive_rate_limits: u32 = 0;
 
     loop {
         let attempt = attempt_fetch().await;
+        consecutive_rate_limits = if matches!(attempt, FetchAttempt::RateLimited(_)) {
+            consecutive_rate_limits + 1
+        } else {
+            0
+        };
+        let delay_secs = next_poll_delay_secs(&attempt, consecutive_rate_limits);
+
         let state = resolve_state(attempt, &last_ok_state);
         if matches!(state.status, UiStatus::Ok) {
             last_ok_state = Some(state.clone());
@@ -314,7 +372,7 @@ pub async fn run_poll_loop(app_handle: tauri::AppHandle) {
             eprintln!("[claude] failed to emit usage update: {err}");
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
     }
 }
 
@@ -352,6 +410,70 @@ mod tests {
     fn failed_fetch_without_last_known_state_reports_waiting() {
         let state = resolve_state(FetchAttempt::Failed, &None);
         assert!(matches!(state.status, UiStatus::Waiting));
+    }
+
+    #[test]
+    fn rate_limited_reuses_last_known_state_like_a_failed_fetch() {
+        let last = UiState::from_usage(&UsageResponse {
+            five_hour: Some(window(40.0)),
+            seven_day: Some(window(10.0)),
+        });
+
+        let state = resolve_state(FetchAttempt::RateLimited(Some(30)), &Some(last.clone()));
+
+        assert!(matches!(state.status, UiStatus::Ok));
+        assert_eq!(state.session_pct, last.session_pct);
+    }
+
+    #[test]
+    fn rate_limited_without_last_known_state_reports_waiting() {
+        let state = resolve_state(FetchAttempt::RateLimited(None), &None);
+        assert!(matches!(state.status, UiStatus::Waiting));
+    }
+
+    #[test]
+    fn non_rate_limited_attempts_use_the_normal_poll_interval() {
+        assert_eq!(next_poll_delay_secs(&FetchAttempt::Unavailable, 0), POLL_INTERVAL_SECS);
+        assert_eq!(next_poll_delay_secs(&FetchAttempt::Failed, 0), POLL_INTERVAL_SECS);
+        assert_eq!(
+            next_poll_delay_secs(
+                &FetchAttempt::Succeeded(UsageResponse::default()),
+                0
+            ),
+            POLL_INTERVAL_SECS
+        );
+    }
+
+    #[test]
+    fn rate_limit_with_retry_after_honors_it_up_to_the_cap() {
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(Some(30)), 1),
+            30
+        );
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(Some(10_000)), 1),
+            MAX_BACKOFF_SECS
+        );
+    }
+
+    #[test]
+    fn rate_limit_without_retry_after_backs_off_exponentially_and_caps() {
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(None), 1),
+            POLL_INTERVAL_SECS
+        );
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(None), 2),
+            POLL_INTERVAL_SECS * 2
+        );
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(None), 3),
+            POLL_INTERVAL_SECS * 4
+        );
+        assert_eq!(
+            next_poll_delay_secs(&FetchAttempt::RateLimited(None), 100),
+            MAX_BACKOFF_SECS
+        );
     }
 
     #[test]
